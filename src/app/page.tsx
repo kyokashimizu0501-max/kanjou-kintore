@@ -76,18 +76,25 @@ export default function Home() {
       fetch("/api/pending-evaluation").then((r) => r.json()),
       fetch("/api/resilience-score").then((r) => r.json()),
       fetch("/api/profile").then((r) => r.json()),
-    ]).then(([logsData, evalData, scoreData, profileData]) => {
-      // オンボーディング未完了なら /onboarding へ
-      if (!profileData.onboardingCompleted) {
-        router.replace("/onboarding");
-        return;
-      }
-      setLogs(logsData);
-      setPendingEval(evalData);
-      setResilienceScore(scoreData.score);
-      setGoal(profileData.goal ?? null);
-      setLoading(false);
-    });
+    ])
+      .then(([logsData, evalData, scoreData, profileData]) => {
+        // APIエラー時はリダイレクトせずそのまま表示
+        if (!profileData || profileData.error) {
+          setLoading(false);
+          return;
+        }
+        // オンボーディング未完了なら /onboarding へ
+        if (!profileData.onboardingCompleted) {
+          router.replace("/onboarding");
+          return;
+        }
+        setLogs(logsData ?? []);
+        setPendingEval(evalData);
+        setResilienceScore(scoreData?.score ?? 0);
+        setGoal(profileData.goal ?? null);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submitEval(score: number) {
