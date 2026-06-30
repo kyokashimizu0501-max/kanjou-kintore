@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import supabase from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const emotionType = searchParams.get("emotionType");
 
-  const strategies = await prisma.copingStrategy.findMany({
-    where: emotionType ? { emotionType } : undefined,
-    orderBy: [{ successCount: "desc" }, { id: "asc" }],
-  });
+  let query = supabase
+    .from("CopingStrategy")
+    .select("*")
+    .order("successCount", { ascending: false })
+    .order("id", { ascending: true });
 
-  return NextResponse.json(strategies);
+  if (emotionType) {
+    query = query.eq("emotionType", emotionType);
+  }
+
+  const { data } = await query;
+  return NextResponse.json(data ?? []);
 }

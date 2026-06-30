@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import supabase from "@/lib/supabase";
 import { TIME_OF_DAY } from "@/lib/constants";
 
 function getTimeOfDay(date: Date) {
@@ -21,11 +21,7 @@ function computeSimilarity(
   },
 ): number {
   let score = 0;
-
-  // emotion_type 一致 (重み 0.4)
   if (newLog.emotionType === pastLog.emotionType) score += 0.4;
-
-  // situation_tag 一致 (重み 0.3)
   if (newLog.situationTag && pastLog.situationTag) {
     const newTags = new Set(newLog.situationTag.split(","));
     const pastTags = new Set(pastLog.situationTag.split(","));
@@ -35,14 +31,9 @@ function computeSimilarity(
   } else if (!newLog.situationTag && !pastLog.situationTag) {
     score += 0.3;
   }
-
-  // 時間帯の近似 (重み 0.2)
   if (getTimeOfDay(newLog.occurredAt) === getTimeOfDay(pastLog.occurredAt))
     score += 0.2;
-
-  // intensity ±1以内 (重み 0.1)
   if (Math.abs(newLog.intensity - pastLog.intensity) <= 1) score += 0.1;
-
   return Math.round(score * 100) / 100;
 }
 
@@ -50,7 +41,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { emotionType, intensity, situationTag, currentLogId } = body;
 
-  const appState = await prisma.appState.findUnique({ where: { id: 1 } });
+  const { data: appState } = await supabase
+    .from("AppState")
+    .select("totalLogs, firstUxDemoSeen")
+    .eq("id", 1)
+    .maybeSingle();
+
   if (!appState || appState.totalLogs < 5) {
     return NextResponse.json({
       similar: null,
@@ -58,17 +54,19 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const pastLogs = await prisma.emotionLog.findMany({
-    where: currentLogId ? { id: { not: currentLogId } } : undefined,
-    orderBy: { occurredAt: "desc" },
-    take: 200,
-    include: {
-      actions: {
-        include: { copingCommits: { include: { copingStrategy: true } } },
-      },
-    },
-  });
+  let query = supabase
+    .from("EmotionLog")
+    .select(
+      "*, actions:Action(*, copingCommits:CopingCommit(*, copingStrategy:CopingStrategy(*)))",
+    )
+    .order("occurredAt", { ascending: false })
+    .limit(200);
 
+  if (currentLogId) {
+    query = query.neq("id", currentLogId);
+  }
+
+  const { data: pastLogs } = await query;
   const newLogData = {
     emotionType,
     intensity,
@@ -79,8 +77,11 @@ export async function POST(req: NextRequest) {
   let bestLog = null;
   let bestScore = 0;
 
-  for (const log of pastLogs) {
-    const score = computeSimilarity(newLogData, log);
+  for (const log of pastLogs ?? []) {
+    const score = computeSimilarity(newLogData, {
+      ...log,
+      occurredAt: new Date(log.occurredAt),
+    });
     if (score > bestScore) {
       bestScore = score;
       bestLog = log;

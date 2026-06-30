@@ -1,28 +1,26 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import supabase from "@/lib/supabase";
 
 export async function GET() {
-  // intensity >= 3 のログ数（分母）
-  const highIntensityLogs = await prisma.emotionLog.count({
-    where: { intensity: { gte: 3 } },
-  });
+  const { count: highIntensityLogs } = await supabase
+    .from("EmotionLog")
+    .select("*", { count: "exact", head: true })
+    .gte("intensity", 3);
 
-  // effectScore >= 2 のコミット数（分子）
-  const successCommits = await prisma.copingCommit.count({
-    where: {
-      effectScore: { gte: 2 },
-      evaluatedAt: { not: null },
-    },
-  });
+  const { count: successCommits } = await supabase
+    .from("CopingCommit")
+    .select("*", { count: "exact", head: true })
+    .gte("effectScore", 2)
+    .not("evaluatedAt", "is", null);
 
+  const total = highIntensityLogs ?? 0;
+  const success = successCommits ?? 0;
   const score =
-    highIntensityLogs === 0
-      ? 0
-      : Math.min(Math.round((successCommits / highIntensityLogs) * 100), 100);
+    total === 0 ? 0 : Math.min(Math.round((success / total) * 100), 100);
 
   return NextResponse.json({
     score,
-    successCount: successCommits,
-    totalHighIntensity: highIntensityLogs,
+    successCount: success,
+    totalHighIntensity: total,
   });
 }

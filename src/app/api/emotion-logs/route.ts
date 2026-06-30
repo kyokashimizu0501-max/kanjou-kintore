@@ -1,51 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { TIME_OF_DAY } from "@/lib/constants";
+import supabase from "@/lib/supabase";
 
 export async function GET() {
-  const logs = await prisma.emotionLog.findMany({
-    orderBy: { occurredAt: "desc" },
-    take: 100,
-    include: { actions: true },
-  });
-  return NextResponse.json(logs);
+  const { data: logs } = await supabase
+    .from("EmotionLog")
+    .select("*, actions:Action(*)")
+    .order("occurredAt", { ascending: false })
+    .limit(100);
+  return NextResponse.json(logs ?? []);
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { emotionType, intensity, situationTag, eventText, actions } = body;
 
-  const log = await prisma.emotionLog.create({
-    data: {
+  const { data: log } = await supabase
+    .from("EmotionLog")
+    .insert({
       emotionType,
       intensity,
       situationTag: situationTag ?? null,
       eventText: eventText ?? null,
-      actions: actions?.length
-        ? {
-            create: actions.map(
-              (a: {
-                actionType: string;
-                actionDetail?: string;
-                isCustomTag?: boolean;
-              }) => ({
-                actionType: a.actionType,
-                actionDetail: a.actionDetail ?? null,
-                isCustomTag: a.isCustomTag ?? false,
-              }),
-            ),
-          }
-        : undefined,
+    })
+    .select()
+    .single();
+
+  if (actions?.length && log) {
+    await supabase.from("Action").insert(
+      actions.map(
+        (a: {
+          actionType: string;
+          actionDetail?: string;
+          isCustomTag?: boolean;
+        }) => ({
+          emotionLogId: log.id,
+          actionType: a.actionType,
+          actionDetail: a.actionDetail ?? null,
+          isCustomTag: a.isCustomTag ?? false,
+        }),
+      ),
+    );
+  }
+
+  const { data: state } = await supabase
+    .from("AppState")
+    .select("totalLogs")
+    .eq("id", 1)
+    .maybeSingle();
+
+  await supabase.from("AppState").upsert(
+    {
+      id: 1,
+      totalLogs: (state?.totalLogs ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
     },
-    include: { actions: true },
-  });
+    { onConflict: "id" },
+  );
 
-  // AppState のトータルログ数を更新
-  await prisma.appState.upsert({
-    where: { id: 1 },
-    update: { totalLogs: { increment: 1 } },
-    create: { id: 1, totalLogs: 1 },
-  });
+  const { data: fullLog } = await supabase
+    .from("EmotionLog")
+    .select("*, actions:Action(*)")
+    .eq("id", log!.id)
+    .single();
 
-  return NextResponse.json(log, { status: 201 });
+  return NextResponse.json(fullLog, { status: 201 });
 }

@@ -1,54 +1,56 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import supabase from "@/lib/supabase";
 
 export async function GET() {
-  const state = await prisma.appState.upsert({
-    where: { id: 1 },
-    create: {},
-    update: {},
-  });
+  let { data: state } = await supabase
+    .from("AppState")
+    .select("*")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (!state) {
+    const { data } = await supabase
+      .from("AppState")
+      .insert({ id: 1, updatedAt: new Date().toISOString() })
+      .select()
+      .single();
+    state = data;
+  }
+
   return NextResponse.json({
-    onboardingCompleted: state.onboardingCompleted,
-    mbtiType: state.mbtiType,
-    emotionTendency: state.emotionTendency
+    onboardingCompleted: state?.onboardingCompleted ?? false,
+    mbtiType: state?.mbtiType ?? null,
+    emotionTendency: state?.emotionTendency
       ? JSON.parse(state.emotionTendency)
       : null,
-    goal: state.goal,
-    reminderEnabled: state.reminderEnabled,
-    reminderTime: state.reminderTime,
+    goal: state?.goal ?? null,
+    reminderEnabled: state?.reminderEnabled ?? false,
+    reminderTime: state?.reminderTime ?? "21:00",
   });
 }
 
 export async function PATCH(req: Request) {
   const body = await req.json();
-  const updated = await prisma.appState.upsert({
-    where: { id: 1 },
-    create: {
-      onboardingCompleted: body.onboardingCompleted ?? false,
-      mbtiType: body.mbtiType ?? null,
-      emotionTendency: body.emotionTendency
-        ? JSON.stringify(body.emotionTendency)
-        : null,
-      goal: body.goal ?? null,
-      reminderEnabled: body.reminderEnabled ?? false,
-      reminderTime: body.reminderTime ?? "21:00",
-    },
-    update: {
-      ...(body.onboardingCompleted !== undefined && {
-        onboardingCompleted: body.onboardingCompleted,
-      }),
-      ...(body.mbtiType !== undefined && { mbtiType: body.mbtiType }),
-      ...(body.emotionTendency !== undefined && {
-        emotionTendency: JSON.stringify(body.emotionTendency),
-      }),
-      ...(body.goal !== undefined && { goal: body.goal }),
-      ...(body.reminderEnabled !== undefined && {
-        reminderEnabled: body.reminderEnabled,
-      }),
-      ...(body.reminderTime !== undefined && {
-        reminderTime: body.reminderTime,
-      }),
-    },
-  });
+
+  const updateData: Record<string, unknown> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (body.onboardingCompleted !== undefined)
+    updateData.onboardingCompleted = body.onboardingCompleted;
+  if (body.mbtiType !== undefined) updateData.mbtiType = body.mbtiType;
+  if (body.emotionTendency !== undefined)
+    updateData.emotionTendency = JSON.stringify(body.emotionTendency);
+  if (body.goal !== undefined) updateData.goal = body.goal;
+  if (body.reminderEnabled !== undefined)
+    updateData.reminderEnabled = body.reminderEnabled;
+  if (body.reminderTime !== undefined)
+    updateData.reminderTime = body.reminderTime;
+
+  const { data: updated } = await supabase
+    .from("AppState")
+    .upsert({ id: 1, ...updateData }, { onConflict: "id" })
+    .select()
+    .single();
+
   return NextResponse.json({ ok: true, data: updated });
 }
