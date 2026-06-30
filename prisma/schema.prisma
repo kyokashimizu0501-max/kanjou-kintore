@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model EmotionLog {
+  id           Int               @id @default(autoincrement())
+  emotionType  String            // anger / sadness / anxiety / joy
+  intensity    Int               // 1-5
+  situationTag String?           // カンマ区切り（任意）
+  eventText    String?           // 出来事テキスト 200字以内（任意）
+  occurredAt   DateTime          @default(now())
+  actions      Action[]
+  similar      SimilarSituation[] @relation("LogA")
+  similarTo    SimilarSituation[] @relation("LogB")
+}
+
+model Action {
+  id                 Int        @id @default(autoincrement())
+  emotionLogId       Int
+  actionType         String
+  actionDetail       String?
+  isCustomTag        Boolean    @default(false)
+  effectivenessScore Int?       // 1=なし 2=まあまあ 3=あり
+  takenAt            DateTime   @default(now())
+  emotionLog         EmotionLog @relation(fields: [emotionLogId], references: [id], onDelete: Cascade)
+  copingCommits      CopingCommit[]
+}
+
+model CopingStrategy {
+  id           Int            @id @default(autoincrement())
+  strategyName String
+  emotionType  String?        // 感情タイプ別（null = 全般）
+  isDefault    Boolean        @default(false)
+  successCount Int            @default(0)
+  totalUsed    Int            @default(0)
+  commits      CopingCommit[]
+}
+
+model CopingCommit {
+  id               Int            @id @default(autoincrement())
+  actionId         Int
+  copingStrategyId Int
+  committedAt      DateTime       @default(now())
+  evaluatedAt      DateTime?
+  effectScore      Int?           // 1/2/3
+  action           Action         @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  copingStrategy   CopingStrategy @relation(fields: [copingStrategyId], references: [id])
+}
+
+model SimilarSituation {
+  id              Int        @id @default(autoincrement())
+  logAId          Int
+  logBId          Int
+  similarityScore Float
+  wasHelpful      Boolean?
+  logA            EmotionLog @relation("LogA", fields: [logAId], references: [id], onDelete: Cascade)
+  logB            EmotionLog @relation("LogB", fields: [logBId], references: [id], onDelete: Cascade)
+}
+
+model CustomTag {
+  id        Int      @id @default(autoincrement())
+  label     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AppState {
+  id                  Int      @id @default(1)
+  totalLogs           Int      @default(0)
+  firstUxDemoSeen     Boolean  @default(false)
+  onboardingCompleted Boolean  @default(false)
+  mbtiType            String?  // "INTJ" など
+  emotionTendency     String?  // JSON: {"anger":2,"sadness":1,"anxiety":3}
+  goal                String?
+  reminderEnabled     Boolean  @default(false)
+  reminderTime        String   @default("21:00")
+  updatedAt           DateTime @updatedAt
+}
