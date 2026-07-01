@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check, ArrowRight } from "lucide-react";
 
 interface Strategy {
   id: number;
@@ -33,7 +34,6 @@ export default function QuickCommit({
 
   async function handleCommit(strategy: Strategy) {
     setCommitting(true);
-    // coping_commit アクション付きのログを作成してコミットIDを得る
     await fetch("/api/emotion-logs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -61,37 +61,37 @@ export default function QuickCommit({
   }
 
   return (
-    <div className="space-y-5">
-      {/* ヘッダー */}
+    <div className="space-y-5 animate-fade-in">
       <div className="text-center space-y-2">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-3xl mx-auto">
-          ✅
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto bg-gradient-to-br from-primary to-[#c9a882] shadow-elevated">
+          <Check className="w-7 h-7 text-white" />
         </div>
-        <p className="text-lg font-bold text-gray-900">記録しました！</p>
-        <p className="text-sm text-gray-400">
+        <p className="text-lg font-bold text-foreground">記録しました！</p>
+        <p className="text-sm text-muted-foreground">
           {emotionEmoji} の気持ちに、今からどう向き合いますか？
         </p>
       </div>
 
-      {/* 対応策リスト */}
       <div className="space-y-2">
         {strategies.slice(0, 4).map((s) => (
           <button
             key={s.id}
             onClick={() => handleCommit(s)}
             disabled={committing}
-            className="w-full bg-white rounded-2xl border border-gray-100 px-4 py-4 flex items-center justify-between gap-3 active:bg-indigo-50 active:border-indigo-200 transition-colors disabled:opacity-50"
+            className="w-full bg-white rounded-2xl border border-[#f0ebe3] shadow-card px-4 py-4 flex items-center justify-between gap-3 active:bg-primary/5 active:border-primary/30 transition-colors disabled:opacity-50"
           >
             <div className="text-left flex-1">
-              <p className="text-sm font-semibold text-gray-800">
+              <p className="text-sm font-semibold text-foreground">
                 {s.strategyName}
               </p>
               {s.successCount > 0 && (
-                <p className="text-xs text-green-600 mt-0.5">✨ 前回効果あり</p>
+                <p className="text-xs text-emerald-600 mt-0.5">
+                  ✨ 前回効果あり
+                </p>
               )}
             </div>
-            <span className="text-xs font-bold text-indigo-600 shrink-0">
-              試す →
+            <span className="text-xs font-bold text-primary shrink-0 flex items-center gap-1">
+              試す <ArrowRight className="w-3.5 h-3.5" />
             </span>
           </button>
         ))}
@@ -100,7 +100,7 @@ export default function QuickCommit({
       <button
         onClick={onSkip}
         disabled={committing}
-        className="w-full py-3.5 text-sm text-gray-400 active:text-gray-600 rounded-2xl"
+        className="w-full py-3.5 text-sm text-muted-foreground active:text-foreground rounded-2xl"
       >
         スキップしてホームへ
       </button>

@@ -3,12 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { EMOTION_TYPES } from "@/lib/constants";
+import { SITUATION_TAGS } from "@/lib/constants";
+import { ResilienceScoreCard } from "@/components/emotion/ResilienceScoreCard";
+import { EmotionCard } from "@/components/emotion/EmotionCard";
+import { PenLine, Target, ChevronRight } from "lucide-react";
 
 interface Log {
   id: number;
   emotionType: string;
   intensity: number;
+  eventText: string | null;
+  situationTag: string | null;
   occurredAt: string;
 }
 
@@ -40,25 +45,11 @@ function calcWeekCount(logs: Log[]): number {
   return logs.filter((l) => new Date(l.occurredAt) >= monday).length;
 }
 
-function relativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const same = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-  if (same(date, today)) return "今日";
-  if (same(date, yesterday)) return "昨日";
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
-function formatTime(dateStr: string): string {
-  return new Date(dateStr).toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function situationLabels(situationTag: string | null): string[] {
+  if (!situationTag) return [];
+  return situationTag
+    .split(",")
+    .map((id) => SITUATION_TAGS.find((t) => t.id === id)?.label ?? id);
 }
 
 export default function Home() {
@@ -78,12 +69,10 @@ export default function Home() {
       fetch("/api/profile").then((r) => r.json()),
     ])
       .then(([logsData, evalData, scoreData, profileData]) => {
-        // APIエラー時はリダイレクトせずそのまま表示
         if (!profileData || profileData.error) {
           setLoading(false);
           return;
         }
-        // オンボーディング未完了なら /onboarding へ
         if (!profileData.onboardingCompleted) {
           router.replace("/onboarding");
           return;
@@ -106,7 +95,6 @@ export default function Home() {
     });
     setEvalDone(true);
     setPendingEval(null);
-    // スコアを再取得
     fetch("/api/resilience-score")
       .then((r) => r.json())
       .then((d) => setResilienceScore(d.score));
@@ -119,44 +107,55 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-gray-400 text-sm">読み込み中…</p>
+      <div className="flex-1 flex items-center justify-center min-h-[60vh]">
+        <p className="text-muted-foreground text-sm">読み込み中…</p>
       </div>
     );
   }
 
   return (
-    <div className="px-4 pt-8 pb-4 space-y-4">
-      {/* タイトル行 */}
-      <div className="flex items-end justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-          感情筋トレ
-        </h1>
-        <span className="text-xs text-gray-400">
+    <div className="px-4 py-6 space-y-6 animate-fade-in">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">感情筋トレ</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            今日の感情を記録して、耐性を育てよう
+          </p>
+        </div>
+        <span className="text-xs text-muted-foreground">
           {new Date().toLocaleDateString("ja-JP", {
             month: "long",
             day: "numeric",
           })}
         </span>
-      </div>
+      </header>
 
-      {/* 目標 */}
+      <ResilienceScoreCard
+        score={resilienceScore ?? 0}
+        streakDays={streak}
+        weeklyCount={weekCount}
+      />
+
       {goal && (
-        <div className="bg-indigo-50 rounded-2xl px-4 py-3">
-          <p className="text-xs text-indigo-400 mb-0.5">今の目標</p>
-          <p className="text-sm text-indigo-800 font-medium leading-snug">
-            {goal}
-          </p>
-        </div>
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Target className="w-4 h-4" />
+            <span className="font-medium">今の目標</span>
+          </div>
+          <div className="bg-white rounded-2xl p-4 shadow-card border border-[#f0ebe3]">
+            <p className="text-sm text-foreground font-medium leading-snug">
+              {goal}
+            </p>
+          </div>
+        </section>
       )}
 
-      {/* 評価バナー */}
       {pendingEval && !evalDone && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <p className="text-xs font-bold text-amber-600 mb-1">
             前回の対応策、どうでしたか？
           </p>
-          <p className="text-sm text-gray-800 mb-3 font-medium">
+          <p className="text-sm text-foreground mb-3 font-medium">
             「{pendingEval.copingStrategy.strategyName}」
           </p>
           <div className="flex gap-2">
@@ -176,136 +175,75 @@ export default function Home() {
           </div>
           <button
             onClick={() => setPendingEval(null)}
-            className="mt-2 text-xs text-gray-400 w-full text-center py-1"
+            className="mt-2 text-xs text-muted-foreground w-full text-center py-1"
           >
             スキップ
           </button>
         </div>
       )}
       {evalDone && (
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
-          <p className="text-sm font-semibold text-green-700">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+          <p className="text-sm font-semibold text-emerald-700">
             ✓ 評価を記録しました
           </p>
         </div>
       )}
 
-      {/* 感情耐性スコア */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5">
-        <p className="text-xs text-gray-400 mb-2">感情耐性スコア</p>
-        <div className="flex items-end gap-2">
-          <span className="text-5xl font-bold text-indigo-600 leading-none">
-            {resilienceScore ?? 0}
-          </span>
-          <span className="text-lg text-gray-400 pb-1">点</span>
-          <span className="text-xs text-gray-400 pb-1.5">/ 100</span>
-        </div>
-        <div className="mt-3 w-full bg-gray-100 rounded-full h-2">
-          <div
-            className="h-2 rounded-full bg-indigo-400 transition-all"
-            style={{ width: `${resilienceScore ?? 0}%` }}
-          />
-        </div>
-        <p className="text-xs text-gray-400 mt-2">
-          {hasData
-            ? "intensity3以上の場面でうまく対処できた割合"
-            : "記録を重ねるとスコアが算出されます"}
-        </p>
-      </div>
-
-      {/* ステータスカード 2列 */}
-      {hasData && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-2xl border border-gray-100 p-4">
-            <p className="text-xs text-gray-400 mb-1">連続記録</p>
-            <div className="flex items-end gap-1">
-              <span className="text-3xl font-bold text-indigo-600">
-                {streak}
-              </span>
-              <span className="text-sm text-gray-500 pb-0.5">日</span>
-              {streak >= 3 && <span className="text-lg pb-0.5">🔥</span>}
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-100 p-4">
-            <p className="text-xs text-gray-400 mb-1">今週の記録</p>
-            <div className="flex items-end gap-1">
-              <span className="text-3xl font-bold text-indigo-600">
-                {weekCount}
-              </span>
-              <span className="text-sm text-gray-500 pb-0.5">件</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 直近の感情（縦リスト） */}
-      {hasData && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <p className="text-xs text-gray-400 mb-3">直近の感情</p>
-          <div className="space-y-3">
-            {recentLogs.map((log) => {
-              const emotion = EMOTION_TYPES.find(
-                (e) => e.id === log.emotionType,
-              );
-              const colorMap: Record<string, string> = {
-                anger: "bg-red-400",
-                sadness: "bg-blue-400",
-                anxiety: "bg-yellow-400",
-                joy: "bg-green-400",
-              };
-              return (
-                <div key={log.id} className="flex items-center gap-3">
-                  <span className="text-2xl shrink-0">{emotion?.emoji}</span>
-                  <div className="shrink-0 w-16">
-                    <p className="text-xs font-semibold text-gray-700 leading-tight">
-                      {relativeDate(log.occurredAt)}
-                    </p>
-                    <p className="text-xs text-gray-400 leading-tight">
-                      {formatTime(log.occurredAt)}
-                    </p>
-                  </div>
-                  <div className="flex-1 flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <div
-                        key={n}
-                        className={`flex-1 h-2 rounded-full ${n <= log.intensity ? (colorMap[log.emotionType] ?? "bg-indigo-400") : "bg-gray-100"}`}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-xs text-gray-400 shrink-0 w-6 text-right">
-                    {log.intensity}/5
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-foreground">
+            直近の感情
+          </h2>
           {logs.length > 4 && (
             <Link
               href="/history"
-              className="mt-4 flex items-center justify-center gap-1 text-xs text-indigo-500 font-semibold py-1"
+              className="text-xs text-primary font-medium flex items-center gap-1"
             >
-              もっと見る <span>→</span>
+              もっと見る <ChevronRight className="w-4 h-4" />
             </Link>
           )}
         </div>
-      )}
 
-      {!hasData && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center space-y-3">
-          <p className="text-3xl">🌱</p>
-          <p className="font-semibold text-gray-800">最初の記録をしましょう</p>
-          <p className="text-sm text-gray-400">
-            記録を重ねるとスコアが育ちます
-          </p>
-        </div>
-      )}
+        {hasData ? (
+          <div className="space-y-3">
+            {recentLogs.map((log, index) => (
+              <EmotionCard
+                key={log.id}
+                emotionType={log.emotionType}
+                intensity={log.intensity}
+                eventText={log.eventText}
+                occurredAt={log.occurredAt}
+                situationLabels={situationLabels(log.situationTag)}
+                className="animate-fade-in"
+                style={
+                  { animationDelay: `${index * 80}ms` } as React.CSSProperties
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-[#f0ebe3] shadow-card p-6 text-center space-y-3">
+            <p className="text-3xl">🌱</p>
+            <p className="font-semibold text-foreground">
+              最初の記録をしましょう
+            </p>
+            <p className="text-sm text-muted-foreground">
+              記録を重ねるとスコアが育ちます
+            </p>
+          </div>
+        )}
+      </section>
 
-      {/* 記録CTA */}
+      <div className="h-16" />
+
       <Link
         href="/record"
-        className="block w-full py-4 bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl text-base font-bold text-center shadow-lg shadow-indigo-100 active:scale-[0.98] transition-transform"
+        className="fixed bottom-24 right-4 left-4 max-w-[358px] mx-auto"
       >
-        感情を記録する
+        <button className="w-full py-4 rounded-2xl font-semibold text-base bg-gradient-to-r from-primary via-[#c9a882] to-primary text-white shadow-elevated transition-all duration-200 hover:shadow-xl active:scale-[0.98] flex items-center justify-center gap-2">
+          <PenLine className="w-5 h-5" />
+          感情を記録する
+        </button>
       </Link>
     </div>
   );

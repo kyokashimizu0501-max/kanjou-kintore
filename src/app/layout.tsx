@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 
-const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const notoSansJP = Noto_Sans_JP({
+  subsets: ["latin"],
+  variable: "--font-noto",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "感情筋トレ",
@@ -23,10 +27,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ja" className={geist.variable}>
-      <body>
+    <html
+      lang="ja"
+      className={notoSansJP.variable}
+      data-scroll-behavior="smooth"
+    >
+      <body className="font-sans antialiased">
         <div id="app-shell">
-          <div className="flex-1 overflow-y-auto pb-20">{children}</div>
+          <main className="flex-1 overflow-y-auto pb-24">{children}</main>
           <BottomNav />
         </div>
       </body>

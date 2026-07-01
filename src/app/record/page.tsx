@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import {
   EMOTION_TYPES,
   SITUATION_TAGS,
@@ -9,11 +10,23 @@ import {
   INTENSITY_LABELS,
 } from "@/lib/constants";
 import type { EmotionTypeId } from "@/lib/constants";
+import { EmotionTagSelector } from "@/components/emotion/EmotionTagSelector";
+import { IntensitySelector } from "@/components/emotion/IntensitySelector";
+import { TagSelector } from "@/components/emotion/TagSelector";
 import AlertCard from "@/components/AlertCard";
 import QuickCommit from "@/components/QuickCommit";
+import { ChevronLeft, X, ChevronRight, Check } from "lucide-react";
 
-// STEP 1-5 = 入力ステップ（プログレスバー表示）/ 6 = 確認画面
-type Step = 1 | 2 | 3 | 4 | 5 | 6 | "alert" | "commit" | "done";
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | "alert" | "commit";
+
+const STEPS = [
+  { subtitle: "今の気持ちは？" },
+  { subtitle: "どれくらい強い？" },
+  { subtitle: "どんな場面？" },
+  { subtitle: "何があった？" },
+  { subtitle: "どうした？" },
+  { subtitle: "これでOK？" },
+];
 
 interface CustomTag {
   id: number;
@@ -34,8 +47,6 @@ interface RecordState {
   actions: SelectedAction[];
 }
 
-const TOTAL_STEPS = 5;
-
 export default function RecordPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
@@ -52,18 +63,14 @@ export default function RecordPage() {
   const newTagRef = useRef<HTMLInputElement>(null);
   const [savedLogId, setSavedLogId] = useState<number | null>(null);
   const [similarData, setSimilarData] = useState<{
-    similar: unknown;
+    similar: Parameters<typeof AlertCard>[0]["similarLog"];
     similarityScore?: number;
     isFirstUxDemo?: boolean;
   } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [committedStrategy, setCommittedStrategy] = useState<string | null>(
-    null,
-  );
 
-  const numericStep = typeof step === "number" ? (step as number) : null;
-  const showProgress = numericStep !== null && numericStep <= TOTAL_STEPS;
-  const selectedEmotion = EMOTION_TYPES.find((e) => e.id === state.emotionType);
+  const numericStep = typeof step === "number" ? step : null;
+  const emotionConfig = EMOTION_TYPES.find((e) => e.id === state.emotionType);
 
   useEffect(() => {
     fetch("/api/custom-tags")
@@ -74,6 +81,15 @@ export default function RecordPage() {
   useEffect(() => {
     if (addingTag) newTagRef.current?.focus();
   }, [addingTag]);
+
+  function toggleSituation(id: string) {
+    setState((s) => ({
+      ...s,
+      situationTags: s.situationTags.includes(id)
+        ? s.situationTags.filter((x) => x !== id)
+        : [...s.situationTags, id],
+    }));
+  }
 
   function isBuiltinSelected(actionId: string) {
     return state.actions.some(
@@ -128,7 +144,6 @@ export default function RecordPage() {
     if (res.ok) {
       const tag: CustomTag = await res.json();
       setCustomTags((prev) => [...prev, tag]);
-      // 作成と同時に選択済みにする
       setState((s) => ({
         ...s,
         actions: [
@@ -139,6 +154,23 @@ export default function RecordPage() {
     }
     setNewTagInput("");
     setAddingTag(false);
+  }
+
+  function selectedActionLabels(): string[] {
+    return state.actions
+      .map((a) => {
+        if (a.isCustomTag) return a.actionDetail ?? "";
+        return (
+          POST_ACTIONS.find((p) => p.id === a.actionType)?.label ?? a.actionType
+        );
+      })
+      .filter(Boolean);
+  }
+
+  function situationLabelsSelected(): string[] {
+    return state.situationTags.map(
+      (id) => SITUATION_TAGS.find((t) => t.id === id)?.label ?? id,
+    );
   }
 
   async function saveLog() {
@@ -178,450 +210,358 @@ export default function RecordPage() {
     }
   }
 
-  // 確認画面用：選択された全行動のラベル
-  function selectedActionLabels(): string[] {
-    return state.actions
-      .map((a) => {
-        if (a.isCustomTag) return a.actionDetail ?? "";
-        return (
-          POST_ACTIONS.find((p) => p.id === a.actionType)?.label ?? a.actionType
-        );
-      })
-      .filter(Boolean);
+  function handleBack() {
+    if (typeof step === "number" && step > 1) {
+      setStep((step - 1) as Step);
+    } else {
+      router.back();
+    }
   }
 
+  function handleNext() {
+    if (step === 6) {
+      saveLog();
+      return;
+    }
+    if (typeof step === "number") setStep((step + 1) as Step);
+  }
+
+  if (step === "alert" && savedLogId !== null) {
+    return (
+      <div className="px-4 py-6">
+        <AlertCard
+          similarLog={similarData?.similar ?? null}
+          similarityScore={similarData?.similarityScore}
+          isFirstUxDemo={similarData?.isFirstUxDemo}
+          currentLogId={savedLogId}
+          emotionType={state.emotionType ?? "anger"}
+          onDone={() => router.push("/")}
+        />
+      </div>
+    );
+  }
+
+  if (step === "commit") {
+    return (
+      <div className="px-4 py-6">
+        <QuickCommit
+          emotionType={state.emotionType ?? "anger"}
+          emotionEmoji={emotionConfig?.emoji ?? ""}
+          onCommit={() => router.push("/")}
+          onSkip={() => router.push("/")}
+        />
+      </div>
+    );
+  }
+
+  const progress = numericStep ? (numericStep / STEPS.length) * 100 : 0;
+  const canProceed = step === 1 ? state.emotionType !== null : true;
+
   return (
-    <div className="flex flex-col min-h-full bg-[#F8F8F9]">
-      {/* ヘッダー + プログレスバー */}
-      <header className="bg-white sticky top-0 z-10">
-        <div className="flex items-center gap-3 px-4 py-3">
+    <div className="min-h-screen flex flex-col animate-fade-in">
+      <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-[#f0ebe3] px-4 py-3">
+        <div className="flex items-center justify-between">
           <button
-            onClick={() => {
-              if (typeof step === "number" && step > 1) {
-                setStep((step - 1) as Step);
-              } else {
-                router.back();
-              }
-            }}
-            className="w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-100 text-gray-500 text-lg"
+            onClick={handleBack}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted/50 transition-colors"
           >
-            ←
+            {typeof step === "number" && step > 1 ? (
+              <ChevronLeft className="w-5 h-5 text-foreground" />
+            ) : (
+              <X className="w-5 h-5 text-foreground" />
+            )}
           </button>
-          <span className="font-semibold text-gray-800 flex-1">
-            感情を記録する
-          </span>
-          {showProgress && (
-            <span className="text-xs text-gray-400">
-              {numericStep}/{TOTAL_STEPS}
-            </span>
+
+          <div className="flex-1 mx-4">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-primary to-[#c9a882] rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground text-center mt-1.5">
+              {numericStep ? STEPS[numericStep - 1].subtitle : ""}
+            </p>
+          </div>
+
+          {numericStep && numericStep >= 3 && numericStep <= 5 ? (
+            <button
+              onClick={handleNext}
+              className="text-sm text-muted-foreground font-medium hover:text-foreground transition-colors"
+            >
+              スキップ
+            </button>
+          ) : (
+            <div className="w-14" />
           )}
         </div>
-        {showProgress && (
-          <div className="h-1 bg-gray-100">
-            <div
-              className="h-1 bg-indigo-500 transition-all duration-300"
-              style={{
-                width: `${((numericStep as number) / TOTAL_STEPS) * 100}%`,
-              }}
-            />
-          </div>
-        )}
       </header>
 
-      <main className="flex-1 px-4 py-6">
-        {/* STEP 1: 感情タグ選択 */}
-        {step === 1 && (
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs text-indigo-500 font-semibold mb-1">
-                STEP 1 / 5 — 必須
-              </p>
-              <h2 className="text-xl font-bold text-gray-900">今の感情は？</h2>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {EMOTION_TYPES.map((e) => (
-                <button
-                  key={e.id}
-                  onClick={() => setState((s) => ({ ...s, emotionType: e.id }))}
-                  className={`flex flex-col items-center gap-3 py-6 rounded-2xl border-2 transition-all active:scale-[0.97] ${
-                    state.emotionType === e.id
-                      ? `${e.color} border-current shadow-md`
-                      : "bg-white border-gray-200"
-                  }`}
-                >
-                  <span className="text-5xl leading-none">{e.emoji}</span>
-                  <span className="text-sm font-semibold text-gray-700 leading-tight text-center px-1">
-                    {e.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <button
-              disabled={!state.emotionType}
-              onClick={() => setStep(2)}
-              className="w-full py-4 bg-indigo-600 active:bg-indigo-700 disabled:opacity-40 text-white rounded-2xl text-base font-bold transition-colors"
-            >
-              次へ
-            </button>
-          </div>
-        )}
-
-        {/* STEP 2: 感情強度 */}
-        {step === 2 && (
-          <div className="space-y-6">
-            <div>
-              <p className="text-xs text-indigo-500 font-semibold mb-1">
-                STEP 2 / 5 — 必須
-              </p>
-              <h2 className="text-xl font-bold text-gray-900">
-                強さはどのくらい？
-              </h2>
-            </div>
-            {selectedEmotion && (
-              <div
-                className={`rounded-2xl py-5 text-center ${selectedEmotion.color}`}
-              >
-                <span className="text-6xl">{selectedEmotion.emoji}</span>
-                <p className="mt-2 text-sm font-semibold">
-                  {selectedEmotion.label}
+      <main className="flex-1 overflow-y-auto px-4 py-6">
+        <div className="space-y-6">
+          {step === 1 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h1 className="text-xl font-bold text-foreground">
+                  今の感情を選んでね
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  一番近いものを選んでください
                 </p>
               </div>
-            )}
-            <div className="space-y-3">
-              <div className="flex justify-between text-xs text-gray-400 px-1">
-                <span>弱い</span>
-                <span>強い</span>
-              </div>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setState((s) => ({ ...s, intensity: n }))}
-                    className={`flex-1 py-5 rounded-2xl text-xl font-bold border-2 transition-all active:scale-[0.95] ${
-                      state.intensity === n
-                        ? "bg-indigo-600 border-indigo-600 text-white shadow-md"
-                        : "bg-white border-gray-200 text-gray-600"
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-              <p className="text-center text-sm text-gray-500 h-5">
-                {INTENSITY_LABELS[state.intensity]}
-              </p>
+              <EmotionTagSelector
+                selected={state.emotionType}
+                onSelect={(e) => setState((s) => ({ ...s, emotionType: e }))}
+              />
             </div>
-            <button
-              onClick={() => setStep(3)}
-              className="w-full py-4 bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl text-base font-bold"
-            >
-              次へ
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* STEP 3: 状況タグ（任意） */}
-        {step === 3 && (
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs text-gray-400 font-semibold mb-1">
-                STEP 3 / 5 — 任意
-              </p>
-              <h2 className="text-xl font-bold text-gray-900">どんな状況？</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                当てはまるものを選んでください
-              </p>
+          {step === 2 && state.emotionType && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <div className="text-5xl mb-3">{emotionConfig?.emoji}</div>
+                <h1 className="text-xl font-bold text-foreground">
+                  その{emotionConfig?.label}、どれくらい強い？
+                </h1>
+              </div>
+              <IntensitySelector
+                emotionType={state.emotionType}
+                selected={state.intensity}
+                onSelect={(i) => setState((s) => ({ ...s, intensity: i }))}
+              />
+              <div className="bg-muted/50 rounded-2xl p-4">
+                <p className="text-sm text-muted-foreground text-center">
+                  {emotionConfig?.advice}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {SITUATION_TAGS.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() =>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h1 className="text-xl font-bold text-foreground">
+                  どんな状況で感じた？
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  あてはまるものを選んでね（複数選択可）
+                </p>
+              </div>
+              <TagSelector
+                options={SITUATION_TAGS}
+                selectedIds={state.situationTags}
+                onToggle={toggleSituation}
+              />
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h1 className="text-xl font-bold text-foreground">
+                  何があった？
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  自由に書き出してOK（最大200文字）
+                </p>
+              </div>
+              <div className="space-y-2">
+                <textarea
+                  value={state.eventText}
+                  onChange={(e) =>
                     setState((s) => ({
                       ...s,
-                      situationTags: s.situationTags.includes(t.id)
-                        ? s.situationTags.filter((x) => x !== t.id)
-                        : [...s.situationTags, t.id],
+                      eventText: e.target.value.slice(0, 200),
                     }))
                   }
-                  className={`px-5 py-3 rounded-full text-sm border-2 font-medium transition-all active:scale-[0.97] ${
-                    state.situationTags.includes(t.id)
-                      ? "bg-indigo-100 border-indigo-400 text-indigo-700"
-                      : "bg-white border-gray-200 text-gray-600"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setStep(4)}
-              className="w-full py-4 bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl text-base font-bold"
-            >
-              次へ（スキップ可）
-            </button>
-          </div>
-        )}
-
-        {/* STEP 4: 出来事テキスト（任意） */}
-        {step === 4 && (
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs text-gray-400 font-semibold mb-1">
-                STEP 4 / 5 — 任意
-              </p>
-              <h2 className="text-xl font-bold text-gray-900">何があった？</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                具体的な出来事を200字以内で（任意）
-              </p>
-            </div>
-            <textarea
-              value={state.eventText}
-              onChange={(e) =>
-                setState((s) => ({ ...s, eventText: e.target.value }))
-              }
-              maxLength={200}
-              rows={5}
-              placeholder="例：会議で意見を否定されて、その場では返せなかった…"
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 focus:border-indigo-400 px-4 py-3 text-sm text-gray-800 placeholder:text-gray-300 resize-none focus:outline-none"
-            />
-            <p className="text-xs text-right text-gray-400">
-              {state.eventText.length}/200
-            </p>
-            <button
-              onClick={() => setStep(5)}
-              className="w-full py-4 bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl text-base font-bold"
-            >
-              次へ（スキップ可）
-            </button>
-          </div>
-        )}
-
-        {/* STEP 5: 感情後の行動（任意） */}
-        {step === 5 && (
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs text-gray-400 font-semibold mb-1">
-                STEP 5 / 5 — 任意
-              </p>
-              <h2 className="text-xl font-bold text-gray-900">
-                その後、何をした？
-              </h2>
-              <p className="text-sm text-gray-400 mt-1">複数選択できます</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {/* ビルトイン行動 */}
-              {POST_ACTIONS.filter((a) => a.id !== "custom").map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => toggleBuiltin(a.id)}
-                  className={`px-5 py-3 rounded-full text-sm border-2 font-medium transition-all active:scale-[0.97] ${
-                    isBuiltinSelected(a.id)
-                      ? "bg-indigo-100 border-indigo-400 text-indigo-700"
-                      : "bg-white border-gray-200 text-gray-600"
-                  }`}
-                >
-                  {a.label}
-                </button>
-              ))}
-
-              {/* マイタグ（既存） */}
-              {customTags.map((tag) => (
-                <button
-                  key={`custom-${tag.id}`}
-                  onClick={() => toggleCustom(tag)}
-                  className={`px-5 py-3 rounded-full text-sm border-2 font-medium transition-all active:scale-[0.97] ${
-                    isCustomSelected(tag)
-                      ? "bg-indigo-100 border-indigo-400 text-indigo-700"
-                      : "bg-white border-gray-200 text-gray-600"
-                  }`}
-                >
-                  {tag.label}
-                </button>
-              ))}
-
-              {/* インライン新規追加 */}
-              {addingTag ? (
-                <div className="flex items-center gap-1 bg-white border-2 border-indigo-300 rounded-full px-3 py-1.5">
-                  <input
-                    ref={newTagRef}
-                    type="text"
-                    value={newTagInput}
-                    onChange={(e) => setNewTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") confirmNewTag();
-                      if (e.key === "Escape") {
-                        setAddingTag(false);
-                        setNewTagInput("");
-                      }
-                    }}
-                    placeholder="行動名を入力"
-                    className="text-sm focus:outline-none text-gray-800 placeholder:text-gray-300 w-28"
-                  />
-                  <button
-                    onClick={confirmNewTag}
-                    className="text-indigo-500 text-xs font-bold shrink-0"
-                  >
-                    追加
-                  </button>
-                </div>
-              ) : (
-                customTags.length < 5 && (
-                  <button
-                    onClick={() => setAddingTag(true)}
-                    className="px-5 py-3 rounded-full text-sm border-2 border-dashed border-gray-300 text-gray-400 font-medium active:bg-gray-50"
-                  >
-                    ＋ 追加
-                  </button>
-                )
-              )}
-            </div>
-
-            <button
-              onClick={() => setStep(6)}
-              className="w-full py-4 bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl text-base font-bold"
-            >
-              確認へ（スキップ可）
-            </button>
-          </div>
-        )}
-
-        {/* STEP 6: 確認・記録 */}
-        {step === 6 && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">確認して記録</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                内容を確認してください
-              </p>
-            </div>
-            <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100 text-sm overflow-hidden">
-              <SummaryRow label="感情">
-                {selectedEmotion && (
-                  <span>
-                    {selectedEmotion.emoji} {selectedEmotion.label}
-                  </span>
-                )}
-              </SummaryRow>
-              <SummaryRow label="強さ">
-                <div className="flex items-center gap-2">
-                  <span className="text-indigo-600 font-bold">
-                    {state.intensity}
-                  </span>
-                  <span className="text-gray-300">/5</span>
-                  <span className="text-gray-500">
-                    {INTENSITY_LABELS[state.intensity]}
-                  </span>
-                </div>
-              </SummaryRow>
-              <SummaryRow label="状況">
-                {state.situationTags.length > 0 ? (
-                  SITUATION_TAGS.filter((t) =>
-                    state.situationTags.includes(t.id),
-                  )
-                    .map((t) => t.label)
-                    .join("、")
-                ) : (
-                  <span className="text-gray-300">未選択</span>
-                )}
-              </SummaryRow>
-              {state.eventText.trim() && (
-                <SummaryRow label="出来事">
-                  <span className="leading-relaxed">
-                    {state.eventText.trim()}
-                  </span>
-                </SummaryRow>
-              )}
-              <SummaryRow label="行動">
-                {selectedActionLabels().length > 0 ? (
-                  selectedActionLabels().join("、")
-                ) : (
-                  <span className="text-gray-300">未選択</span>
-                )}
-              </SummaryRow>
-            </div>
-            <button
-              disabled={saving}
-              onClick={saveLog}
-              className="w-full py-4 bg-indigo-600 active:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl text-base font-bold transition-colors"
-            >
-              {saving ? "保存中…" : "記録する 📝"}
-            </button>
-          </div>
-        )}
-
-        {/* アラート画面 */}
-        {step === "alert" && (
-          <AlertCard
-            similarLog={similarData?.similar as never}
-            similarityScore={similarData?.similarityScore}
-            isFirstUxDemo={similarData?.isFirstUxDemo}
-            currentLogId={savedLogId}
-            emotionType={state.emotionType!}
-            onDone={() => router.push("/")}
-          />
-        )}
-
-        {/* コミット画面（アラートなし時） */}
-        {step === "commit" && (
-          <QuickCommit
-            emotionType={state.emotionType!}
-            emotionEmoji={selectedEmotion?.emoji ?? ""}
-            onCommit={(name) => {
-              setCommittedStrategy(name);
-              setStep("done");
-            }}
-            onSkip={() => setStep("done")}
-          />
-        )}
-
-        {/* 完了 */}
-        {step === "done" && (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-5 text-center">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-4xl">
-              ✅
-            </div>
-            <div>
-              <p className="text-xl font-bold text-gray-900">
-                お疲れさまでした
-              </p>
-              {committedStrategy ? (
-                <div className="mt-3 bg-indigo-50 rounded-2xl px-4 py-3 text-sm text-indigo-800 font-medium">
-                  「{committedStrategy}」を試してみましょう
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 mt-2">
-                  積み重ねが自分を変えていきます
+                  placeholder="今日の出来事を書いてみよう..."
+                  rows={5}
+                  className={cn(
+                    "w-full h-40 p-4 rounded-2xl resize-none",
+                    "bg-white border-2 border-[#e8e4dc]",
+                    "text-foreground placeholder:text-muted-foreground/50",
+                    "focus:border-primary focus:ring-0 focus:outline-none",
+                    "transition-colors duration-200",
+                  )}
+                />
+                <p className="text-xs text-muted-foreground text-right">
+                  {state.eventText.length} / 200
                 </p>
-              )}
+              </div>
             </div>
-            <button
-              onClick={() => router.push("/")}
-              className="mt-2 w-full py-4 bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl font-bold"
-            >
-              ホームへ戻る
-            </button>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+          )}
 
-function SummaryRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex gap-3 px-4 py-3.5">
-      <span className="text-gray-400 w-12 shrink-0 text-xs pt-0.5">
-        {label}
-      </span>
-      <span className="text-gray-800">{children}</span>
+          {step === 5 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h1 className="text-xl font-bold text-foreground">
+                  どう対処した？
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  あてはまるものを選んでね（複数選択可）
+                </p>
+              </div>
+              <TagSelector
+                options={POST_ACTIONS.filter((a) => a.id !== "custom")}
+                selectedIds={state.actions
+                  .filter((a) => !a.isCustomTag)
+                  .map((a) => a.actionType)}
+                onToggle={toggleBuiltin}
+                trailing={
+                  <>
+                    {customTags.map((tag) => (
+                      <button
+                        key={`custom-${tag.id}`}
+                        onClick={() => toggleCustom(tag)}
+                        className={cn(
+                          "inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 border-2",
+                          isCustomSelected(tag)
+                            ? "bg-primary border-primary text-white shadow-soft scale-[1.02]"
+                            : "bg-white border-[#e8e4dc] text-foreground hover:border-primary/40 hover:bg-primary/5",
+                        )}
+                      >
+                        {tag.label}
+                      </button>
+                    ))}
+                    {addingTag ? (
+                      <div className="flex items-center gap-1 bg-white border-2 border-primary/40 rounded-full px-3 py-1.5">
+                        <input
+                          ref={newTagRef}
+                          type="text"
+                          value={newTagInput}
+                          onChange={(e) => setNewTagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") confirmNewTag();
+                            if (e.key === "Escape") {
+                              setAddingTag(false);
+                              setNewTagInput("");
+                            }
+                          }}
+                          placeholder="行動名を入力"
+                          className="text-sm focus:outline-none text-foreground placeholder:text-muted-foreground/60 w-28"
+                        />
+                        <button
+                          onClick={confirmNewTag}
+                          className="text-primary text-xs font-bold shrink-0"
+                        >
+                          追加
+                        </button>
+                      </div>
+                    ) : (
+                      customTags.length < 5 && (
+                        <button
+                          onClick={() => setAddingTag(true)}
+                          className="px-4 py-2.5 rounded-full text-sm border-2 border-dashed border-muted-foreground/30 text-muted-foreground font-medium active:bg-muted/50"
+                        >
+                          ＋ 追加
+                        </button>
+                      )
+                    )}
+                  </>
+                }
+              />
+            </div>
+          )}
+
+          {step === 6 && state.emotionType && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h1 className="text-xl font-bold text-foreground">
+                  記録内容の確認
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  ミスがなければ完了しよう
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-5 shadow-card border border-[#f0ebe3] space-y-4">
+                <div className="flex items-center gap-4">
+                  <div
+                    className={cn(
+                      "w-16 h-16 rounded-xl flex items-center justify-center text-3xl",
+                      emotionConfig?.colorClass.light,
+                    )}
+                  >
+                    {emotionConfig?.emoji}
+                  </div>
+                  <div>
+                    <p
+                      className={cn(
+                        "text-lg font-semibold",
+                        emotionConfig?.colorClass.text,
+                      )}
+                    >
+                      {emotionConfig?.label}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      強度 {state.intensity} —{" "}
+                      {INTENSITY_LABELS[state.intensity]}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {situationLabelsSelected().length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs text-muted-foreground shrink-0 mt-0.5">
+                        状況:
+                      </span>
+                      <span className="text-sm">
+                        {situationLabelsSelected().join("、")}
+                      </span>
+                    </div>
+                  )}
+                  {state.eventText && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">
+                        出来事:
+                      </span>
+                      <p className="text-sm mt-1">{state.eventText}</p>
+                    </div>
+                  )}
+                  {selectedActionLabels().length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs text-muted-foreground shrink-0 mt-0.5">
+                        対処:
+                      </span>
+                      <span className="text-sm">
+                        {selectedActionLabels().join("、")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      <footer className="sticky bottom-0 bg-white/95 backdrop-blur-xl border-t border-[#f0ebe3] px-4 py-4">
+        <button
+          onClick={handleNext}
+          disabled={!canProceed || saving}
+          className={cn(
+            "w-full py-4 rounded-2xl font-semibold text-base",
+            "transition-all duration-200 active:scale-[0.98]",
+            "flex items-center justify-center gap-2",
+            canProceed && !saving
+              ? "bg-gradient-to-r from-primary via-[#c9a882] to-primary text-white shadow-elevated hover:shadow-xl"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          {step === 6 ? (
+            <>
+              <Check className="w-5 h-5" />
+              {saving ? "記録中…" : "記録を完了"}
+            </>
+          ) : (
+            <>
+              次へ
+              <ChevronRight className="w-5 h-5" />
+            </>
+          )}
+        </button>
+      </footer>
     </div>
   );
 }
